@@ -16,22 +16,13 @@ interface GPTMailGeneratedEmailData {
 interface GPTMailEmailItem {
     id?: string;
     email_address?: string;
-    to_address?: string;
-    recipient?: string;
     from_address?: string;
-    sender?: string;
-    from?: string;
     subject?: string;
     content?: string;
-    body?: string;
-    text?: string;
     html_content?: string;
-    html?: string;
     has_html?: boolean;
     timestamp?: number;
     created_at?: string;
-    createdAt?: string;
-    date?: string;
 }
 
 interface GPTMailEmailsData {
@@ -40,38 +31,11 @@ interface GPTMailEmailsData {
 }
 
 const GPTMAIL_API_BASE_URL = "https://mail.chatgpt.org.uk";
-const GPTMAIL_POLL_ATTEMPTS = 12;
-const GPTMAIL_POLL_INTERVAL_MS = 5000;
+const GPTMAIL_POLL_ATTEMPTS = 2;
+const GPTMAIL_POLL_INTERVAL_MS = 10000;
 
 function normalizeEmail(value: string): string {
     return String(value ?? "").trim().toLowerCase();
-}
-
-function firstNonEmptyString(...values: unknown[]): string {
-    for (const value of values) {
-        const text = String(value ?? "").trim();
-        if (text) {
-            return text;
-        }
-    }
-    return "";
-}
-
-function normalizeTimestamp(...values: unknown[]): number {
-    for (const value of values) {
-        if (value === undefined || value === null || value === "") {
-            continue;
-        }
-        const numeric = Number(value);
-        if (Number.isFinite(numeric) && numeric > 0) {
-            return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
-        }
-        const parsed = Date.parse(String(value));
-        if (Number.isFinite(parsed)) {
-            return parsed;
-        }
-    }
-    return 0;
 }
 
 function ensureApiBaseUrlConfigured(): string {
@@ -84,6 +48,15 @@ function ensureApiKeyConfigured(): string {
         throw new Error("gptMailApiKey 未配置，请先在 config.json 中填写 GPTMail API Key");
     }
     return apiKey;
+}
+
+function pickRandomDomain(domains: string[]): string {
+    const candidates = domains.map((item) => String(item ?? "").trim()).filter(Boolean);
+    if (candidates.length === 0) {
+        return String(appConfig.gptMailDomain ?? "").trim();
+    }
+    const index = Math.floor(Math.random() * candidates.length);
+    return candidates[index] ?? "";
 }
 
 function buildDispatcher(): Dispatcher {
@@ -130,7 +103,7 @@ async function requestJSON<T>(path: string, init: UndiciRequestInit = {}): Promi
 }
 
 async function generateMailbox(): Promise<string> {
-    const domain = String(appConfig.gptMailDomain ?? "").trim();
+    const domain = pickRandomDomain(appConfig.gptMailDomains);
     const body: Record<string, string> = {
         prefix: generateEmailName(),
     };
@@ -164,6 +137,7 @@ async function listEmails(email: string): Promise<GPTMailEmailItem[]> {
         headers: buildHeaders(),
     });
     const rawBody = await response.text();
+    console.log(`pollGPTMailOtp: listEmails rawBody=${rawBody}`);
     if (!response.ok) {
         throw new Error(`GPTMail 邮件列表请求失败: ${response.status} body=${rawBody}`);
     }
@@ -171,19 +145,25 @@ async function listEmails(email: string): Promise<GPTMailEmailItem[]> {
     if (!payload?.success) {
         throw new Error(`GPTMail 邮件列表返回失败: ${payload?.error ?? rawBody}`);
     }
-    const data = payload?.data as GPTMailEmailsData | GPTMailEmailItem[] | undefined;
-    if (Array.isArray(data)) {
-        return data;
-    }
-    return Array.isArray(data?.emails) ? data.emails : [];
+    return Array.isArray(payload?.data?.emails) ? payload.data.emails : [];
 }
 
 async function getEmailDetail(id: string): Promise<GPTMailEmailItem> {
-    const data = await requestJSON<GPTMailEmailItem>(`/api/email/${encodeURIComponent(id)}`, {
+    const url = new URL(`${ensureApiBaseUrlConfigured()}/api/email/${encodeURIComponent(id)}`);
+    const response = await gptMailFetch(url, {
         method: "GET",
         headers: buildHeaders(),
     });
-    return data;
+    const rawBody = await response.text();
+    console.log(`pollGPTMailOtp: getEmailDetail id=${id} rawBody=${rawBody}`);
+    if (!response.ok) {
+        throw new Error(`GPTMail 邮件详情请求失败: ${response.status} body=${rawBody}`);
+    }
+    const payload = JSON.parse(rawBody) as GPTMailEnvelope<GPTMailEmailItem>;
+    if (!payload?.success) {
+        throw new Error(`GPTMail 邮件详情返回失败: ${payload?.error ?? rawBody}`);
+    }
+    return payload.data ?? {} as GPTMailEmailItem;
 }
 
 async function deleteEmail(id: string): Promise<void> {
@@ -217,48 +197,13 @@ export function createGPTMailProvider() {
                         return {
                             ...detail,
                             id: String(detail?.id ?? mail?.id ?? ""),
-                            sender: firstNonEmptyString(
-                                detail?.from_address,
-                                detail?.sender,
-                                detail?.from,
-                                mail?.from_address,
-                                mail?.sender,
-                                mail?.from,
-                            ),
-                            recipient: firstNonEmptyString(
-                                detail?.email_address,
-                                detail?.to_address,
-                                detail?.recipient,
-                                mail?.email_address,
-                                mail?.to_address,
-                                mail?.recipient,
-                            ),
-                            subject: firstNonEmptyString(detail?.subject, mail?.subject),
-                            content: firstNonEmptyString(
-                                detail?.content,
-                                detail?.body,
-                                detail?.text,
-                                mail?.content,
-                                mail?.body,
-                                mail?.text,
-                            ),
-                            timestamp: normalizeTimestamp(
-                                detail?.timestamp,
-                                detail?.created_at,
-                                detail?.createdAt,
-                                detail?.date,
-                                mail?.timestamp,
-                                mail?.created_at,
-                                mail?.createdAt,
-                                mail?.date,
-                            ),
+                            sender: String(detail?.from_address ?? mail?.from_address ?? ""),
+                            recipient: String(detail?.email_address ?? mail?.email_address ?? ""),
+                            subject: String(detail?.subject ?? mail?.subject ?? ""),
+                            content: String(detail?.content ?? mail?.content ?? ""),
+                            timestamp: Number(detail?.timestamp ?? mail?.timestamp ?? 0),
                             extraTexts: [
-                                firstNonEmptyString(
-                                    detail?.html_content,
-                                    detail?.html,
-                                    mail?.html_content,
-                                    mail?.html,
-                                ),
+                                String(detail?.html_content ?? mail?.html_content ?? ""),
                             ],
                         };
                     }),

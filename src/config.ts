@@ -11,6 +11,7 @@ interface AppConfigFile {
     gmailEmailAddress?: unknown;
     gptMailApiKey?: unknown;
     gptMailDomain?: unknown;
+    gptMailDomains?: unknown;
     "2925EmailAddress"?: unknown;
     "2925Password"?: unknown;
     cloudflareEmailDomain?: unknown;
@@ -35,6 +36,7 @@ export interface AppConfig {
     gmailEmailAddress: string;
     gptMailApiKey: string;
     gptMailDomain: string;
+    gptMailDomains: string[];
     ["2925EmailAddress"]: string;
     ["2925Password"]: string;
     cloudflareEmailDomain: string;
@@ -59,6 +61,7 @@ const DEFAULT_CONFIG: AppConfig = {
     gmailEmailAddress: "",
     gptMailApiKey: "",
     gptMailDomain: "",
+    gptMailDomains: [],
     "2925EmailAddress": "",
     "2925Password": "",
     cloudflareEmailDomain: "",
@@ -105,6 +108,15 @@ function normalizeBoolean(value: unknown, fallback: boolean): boolean {
     return fallback;
 }
 
+function normalizeStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean);
+}
+
 function loadConfig(): AppConfig {
     const configPath = path.resolve(process.cwd(), "config.json");
     let raw: string;
@@ -138,6 +150,7 @@ function loadConfig(): AppConfig {
             typeof parsed.gptMailDomain === "string"
                 ? parsed.gptMailDomain.trim()
                 : DEFAULT_CONFIG.gptMailDomain,
+        gptMailDomains: normalizeStringArray(parsed.gptMailDomains),
         "2925EmailAddress":
             typeof parsed["2925EmailAddress"] === "string"
                 ? parsed["2925EmailAddress"].trim()

@@ -22,54 +22,43 @@ export function normalizeMailbox(value: string): string {
     return (angleMatch?.[1] ?? input).trim();
 }
 
-function normalizeTextForCodeMatching(text: string): string {
-    return String(text ?? "")
-        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/gi, " ")
-        .replace(/&#(\d+);/g, (_, codePoint) => String.fromCharCode(Number(codePoint)))
-        .replace(/&amp;/gi, "&")
-        .replace(/&lt;/gi, "<")
-        .replace(/&gt;/gi, ">")
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\s+/g, " ")
-        .trim();
-}
-
-function normalizeSixDigitCode(value: string | undefined): string {
-    const digitsOnly = String(value ?? "").replace(/\D/g, "");
-    return digitsOnly.length === 6 ? digitsOnly : "";
-}
-
 function extractVerificationCode(text: string): string {
-    const raw = normalizeTextForCodeMatching(text);
+    const raw = String(text ?? "");
     if (!raw) {
         return "";
     }
 
-    const contextPatterns = [
-        /\b((?:\d[\s-]*){6})\b(?=.{0,80}\b(?:is your|your|OpenAI|ChatGPT|verification|security|login|sign[-\s]?in|code|验证码)\b)/i,
-        /\b(?:OpenAI|ChatGPT|verification|security|login|sign[-\s]?in|code|验证码)\b.{0,120}?\b((?:\d[\s-]*){6})\b/i,
-        /\b((?:\d[\s-]*){6})\b.{0,80}?\b(?:OpenAI|ChatGPT|verification|security|login|sign[-\s]?in|code|验证码)\b/i,
-    ];
-    for (const pattern of contextPatterns) {
-        const matched = raw.match(pattern);
-        const code = normalizeSixDigitCode(matched?.[1]);
-        if (code) {
-            return code;
+    // If the text looks like HTML, try to prefer codes that appear between tags
+    if (raw.includes("<")) {
+        // Match a 6-digit sequence that appears between a closing '>' and an opening '<'
+        const betweenTags = raw.match(/>\s*([0-9]{6})\s*</);
+        if (betweenTags?.[1]) {
+            return betweenTags[1];
+        }
+
+        // Try a slightly more permissive search inside text nodes (up to 200 chars around digits)
+        const betweenTagsWide = raw.match(/>[^<>]{0,200}?([0-9]{6})[^<>]{0,200}?</);
+        if (betweenTagsWide?.[1]) {
+            return betweenTagsWide[1];
         }
     }
 
+    // Plain-text direct 6-digit match
     const directMatch = raw.match(/\b(\d{6})\b/);
     if (directMatch?.[1]) {
         return directMatch[1];
     }
 
-    return normalizeSixDigitCode(
-        raw.match(/(?:^|[^\d])((?:\d[\s-]*){6})(?:[^\d]|$)/)?.[1],
-    );
+    // Fallback: remove HTML tags and find a compact 6-digit sequence (allowing spaces or dashes)
+    const compactMatch = raw
+        .replace(/<[^>]+>/g, " ")
+        .match(/(?:^|[^\d])((?:\d[\s-]*){6})(?:[^\d]|$)/);
+    if (!compactMatch?.[1]) {
+        return "";
+    }
+
+    const digitsOnly = compactMatch[1].replace(/\D/g, "");
+    return digitsOnly.length === 6 ? digitsOnly : "";
 }
 
 function normalizeRecipientList(recipient: string | string[] | undefined): string[] {

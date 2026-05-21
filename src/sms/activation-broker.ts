@@ -385,7 +385,12 @@ export class ActivationBroker<
             rawStatus: verification.rawStatus,
           };
         } catch (e) {
-          await this.markAsFailed();
+          const errorMessage = e instanceof Error ? e.message : String(e ?? "");
+          const shouldRotateImmediately =
+            errorMessage.includes("HeroSMS 长时间未收到验证码") ||
+            errorMessage.includes("STATUS_CANCEL") ||
+            errorMessage.includes("phone_max_usage_exceed");
+          await this.markAsFailed(shouldRotateImmediately);
           throw e;
         }
       },
