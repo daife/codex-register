@@ -36,6 +36,7 @@ type FetchLike = typeof fetch;
 const DEFAULT_INSECURE_TLS = true;
 const FETCH_RETRY_COUNT = 3;
 const FETCH_RETRY_DELAY_MS = 1500;
+const CHAT_OPENAI_BASE_URL = "https://chat.openai.com";
 
 function resolveProxyUrl(): string {
     return appConfig.defaultProxyUrl;
@@ -919,6 +920,58 @@ export class OpenAIClient {
         return filePath;
     }
 
+    private async fetchChatOpenAISession(email: string): Promise<Record<string, unknown>> {
+        const response = await this.fetch(`${CHAT_OPENAI_BASE_URL}/api/auth/session`, {
+            method: "GET",
+            headers: this.createBrowserHeaders({
+                accept: "application/json",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+                referer: `${CHAT_OPENAI_BASE_URL}/`,
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(
+                `获取 chat.openai.com session 失败: ${await this.formatErrorResponse(response)}`,
+            );
+        }
+
+        const payload = (await response.json()) as unknown;
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+            throw new Error(`chat.openai.com session 返回格式异常: ${JSON.stringify(payload)}`);
+        }
+        
+        const session = payload as Record<string, unknown>;
+        const sessionEmail = session.email;
+        const sessionName = session.name;
+        
+        // 验证 email 和 name 是否一致
+        if (sessionEmail !== email) {
+            throw new Error(
+                `session email 不匹配: expected=${email} actual=${sessionEmail}`,
+            );
+        }
+        if (!sessionName) {
+            throw new Error(`session 中缺少 name 字段`);
+        }
+        
+        return session;
+    }
+
+    private async saveChatOpenAISession(email: string, fileName: string): Promise<string> {
+        const sessionDir = path.resolve(process.cwd(), "auth", "session");
+        await mkdir(sessionDir, {recursive: true});
+        const filePath = path.join(sessionDir, fileName);
+        const session = await this.fetchChatOpenAISession(email);
+        await writeFile(
+            filePath,
+            `${JSON.stringify(session, null, 2)}\n`,
+            "utf8",
+        );
+        return filePath;
+    }
+
     private async exchangeCodeForToken(code: string): Promise<SavedAuthRecord> {
         let lastError = "";
         for (const tokenURL of AUTH_OAUTH_TOKEN_URLS) {
@@ -1053,6 +1106,8 @@ export class OpenAIClient {
         const authDir = path.resolve(process.cwd(), "auth");
         await mkdir(authDir, {recursive: true});
         const fileName = this.buildAuthFileName(record.email);
+        const sessionPath = await this.saveChatOpenAISession(record.email, fileName);
+        console.log(`chatSessionSaved: ${sessionPath}`);
         const filePath = path.join(authDir, fileName);
         await writeFile(filePath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
 
