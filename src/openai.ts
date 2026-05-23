@@ -924,7 +924,7 @@ export class OpenAIClient {
         if (!this.email) {
             throw new Error("当前客户端缺少 email，无法保存 chat.openai.com session");
         }
-        await this.bootChatOpenAISession();
+        await this.openChatOpenAISignInPage(this.email);
         const fileName = this.buildAuthFileName(this.email);
         const filePath = await this.saveChatOpenAISession(this.email, fileName);
         return filePath;
@@ -943,6 +943,81 @@ export class OpenAIClient {
         });
         if (!response.ok) {
             throw new Error(`打开 chat.openai.com 失败: ${response.status}`);
+        }
+    }
+
+    private async openChatOpenAISignInPage(email: string): Promise<void> {
+        await this.bootChatOpenAISession();
+
+        if (!this.deviceID) {
+            this.deviceID =
+                (await this.readCookie(CHAT_OPENAI_BASE_URL, "oai-did")) ||
+                (await this.readCookie("https://openai.com", "oai-did")) ||
+                this.deviceID;
+        }
+
+        const csrfCookie = await this.readCookie(
+            CHAT_OPENAI_BASE_URL,
+            "__Host-next-auth.csrf-token",
+        );
+        const csrfToken = decodeURIComponent(csrfCookie).split("|")[0] ?? "";
+        if (!csrfToken) {
+            throw new Error("未找到 chat.openai.com 的 __Host-next-auth.csrf-token，无法打开登录页");
+        }
+
+        const query = new URLSearchParams({
+            prompt: "login",
+            "ext-oai-did": this.deviceID,
+            auth_session_logging_id: globalThis.crypto.randomUUID(),
+            "ext-passkey-client-capabilities": "0111",
+            screen_hint: "login_or_signup",
+            login_hint: email,
+        });
+        const body = new URLSearchParams({
+            callbackUrl: `${CHAT_OPENAI_BASE_URL}/`,
+            csrfToken,
+            json: "true",
+        });
+
+        const response = await this.fetch(
+            `${CHAT_OPENAI_BASE_URL}/api/auth/signin/openai?${query.toString()}`,
+            {
+                method: "POST",
+                redirect: "follow",
+                headers: this.createBrowserHeaders({
+                    accept: "*/*",
+                    "content-type": "application/x-www-form-urlencoded",
+                    origin: CHAT_OPENAI_BASE_URL,
+                    referer: `${CHAT_OPENAI_BASE_URL}/`,
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "same-origin",
+                }),
+                body,
+            },
+        );
+        if (!response.ok) {
+            throw new Error(`打开 chat.openai.com 登录页失败: ${response.status}`);
+        }
+
+        const payload = (await response.json()) as { url?: string };
+        if (!payload.url) {
+            throw new Error(`chat.openai.com 登录页缺少跳转URL: ${JSON.stringify(payload)}`);
+        }
+
+        const authorizeResp = await this.fetch(payload.url, {
+            method: "GET",
+            redirect: "follow",
+            headers: this.createBrowserHeaders({
+                "accept-encoding": "gzip, deflate, br",
+                referer: `${CHAT_OPENAI_BASE_URL}/`,
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "same-site",
+            }),
+        });
+        if (!authorizeResp.ok) {
+            throw new Error(`打开 chat.openai.com authorize 页失败: ${authorizeResp.status}`);
         }
     }
 
