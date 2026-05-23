@@ -924,9 +924,26 @@ export class OpenAIClient {
         if (!this.email) {
             throw new Error("当前客户端缺少 email，无法保存 chat.openai.com session");
         }
+        await this.bootChatOpenAISession();
         const fileName = this.buildAuthFileName(this.email);
         const filePath = await this.saveChatOpenAISession(this.email, fileName);
         return filePath;
+    }
+
+    private async bootChatOpenAISession(): Promise<void> {
+        const response = await this.fetch(`${CHAT_OPENAI_BASE_URL}/`, {
+            method: "GET",
+            redirect: "follow",
+            headers: this.createBrowserHeaders({
+                "accept-encoding": "gzip, deflate, br",
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "none",
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(`打开 chat.openai.com 失败: ${response.status}`);
+        }
     }
 
     private async fetchChatOpenAISession(email: string): Promise<Record<string, unknown>> {
