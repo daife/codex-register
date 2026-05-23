@@ -1026,22 +1026,8 @@ export class OpenAIClient {
         }
         
         const session = payload as Record<string, unknown>;
-        const sessionEmail = session.email;
-        const sessionName = session.name;
-        
-        // 验证 email 和 name 是否一致
-        if (sessionEmail !== email) {
-            throw new Error(
-                `session email 不匹配: expected=${email} actual=${sessionEmail}`,
-            );
-        }
-        if (!sessionName) {
-            throw new Error(`session 中缺少 name 字段`);
-        }
-        
         return session;
-    }
-
+        }
     private async saveChatOpenAISession(email: string, fileName: string): Promise<string> {
         const sessionDir = path.resolve(process.cwd(), "auth", "session");
         await mkdir(sessionDir, {recursive: true});
