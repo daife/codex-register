@@ -36,7 +36,6 @@ type FetchLike = typeof fetch;
 const DEFAULT_INSECURE_TLS = true;
 const FETCH_RETRY_COUNT = 3;
 const FETCH_RETRY_DELAY_MS = 1500;
-const CHAT_OPENAI_BASE_URL = "https://chat.openai.com";
 
 function resolveProxyUrl(): string {
     return appConfig.defaultProxyUrl;
@@ -922,47 +921,30 @@ export class OpenAIClient {
 
     async saveChatOpenAISessionSnapshot(): Promise<string> {
         if (!this.email) {
-            throw new Error("当前客户端缺少 email，无法保存 chat.openai.com session");
+            throw new Error("当前客户端缺少 email，无法保存 chatgpt.com session");
         }
-        await this.openChatOpenAISignInPage(this.email);
+        try {
+            // 尝试直接获取 session，如果已经登录了就不需要重新走登录流程
+            await this.fetchChatOpenAISession(this.email);
+        } catch (e) {
+            // 如果没登录，再尝试登录
+            await this.openChatOpenAISignInPage(this.email);
+        }
         const fileName = this.buildAuthFileName(this.email);
         const filePath = await this.saveChatOpenAISession(this.email, fileName);
         return filePath;
     }
 
-    private async bootChatOpenAISession(): Promise<void> {
-        const response = await this.fetch(`${CHAT_OPENAI_BASE_URL}/`, {
-            method: "GET",
-            redirect: "follow",
-            headers: this.createBrowserHeaders({
-                "accept-encoding": "gzip, deflate, br",
-                "sec-fetch-dest": "document",
-                "sec-fetch-mode": "navigate",
-                "sec-fetch-site": "none",
-            }),
-        });
-        if (!response.ok) {
-            throw new Error(`打开 chat.openai.com 失败: ${response.status}`);
-        }
-    }
-
     private async openChatOpenAISignInPage(email: string): Promise<void> {
-        await this.bootChatOpenAISession();
-
-        if (!this.deviceID) {
-            this.deviceID =
-                (await this.readCookie(CHAT_OPENAI_BASE_URL, "oai-did")) ||
-                (await this.readCookie("https://openai.com", "oai-did")) ||
-                this.deviceID;
-        }
+        await this.bootChatGPTSession();
 
         const csrfCookie = await this.readCookie(
-            CHAT_OPENAI_BASE_URL,
+            CHATGPT_BASE_URL,
             "__Host-next-auth.csrf-token",
         );
         const csrfToken = decodeURIComponent(csrfCookie).split("|")[0] ?? "";
         if (!csrfToken) {
-            throw new Error("未找到 chat.openai.com 的 __Host-next-auth.csrf-token，无法打开登录页");
+            throw new Error("未找到 chatgpt.com 的 __Host-next-auth.csrf-token，无法打开登录页");
         }
 
         const query = new URLSearchParams({
@@ -974,21 +956,21 @@ export class OpenAIClient {
             login_hint: email,
         });
         const body = new URLSearchParams({
-            callbackUrl: `${CHAT_OPENAI_BASE_URL}/`,
+            callbackUrl: `${CHATGPT_BASE_URL}/`,
             csrfToken,
             json: "true",
         });
 
         const response = await this.fetch(
-            `${CHAT_OPENAI_BASE_URL}/api/auth/signin/openai?${query.toString()}`,
+            `${CHATGPT_BASE_URL}/api/auth/signin/openai?${query.toString()}`,
             {
                 method: "POST",
                 redirect: "follow",
                 headers: this.createBrowserHeaders({
                     accept: "*/*",
                     "content-type": "application/x-www-form-urlencoded",
-                    origin: CHAT_OPENAI_BASE_URL,
-                    referer: `${CHAT_OPENAI_BASE_URL}/`,
+                    origin: CHATGPT_BASE_URL,
+                    referer: `${CHATGPT_BASE_URL}/`,
                     "sec-fetch-dest": "empty",
                     "sec-fetch-mode": "cors",
                     "sec-fetch-site": "same-origin",
@@ -997,12 +979,12 @@ export class OpenAIClient {
             },
         );
         if (!response.ok) {
-            throw new Error(`打开 chat.openai.com 登录页失败: ${response.status}`);
+            throw new Error(`打开 chatgpt.com 登录页失败: ${response.status}`);
         }
 
         const payload = (await response.json()) as { url?: string };
         if (!payload.url) {
-            throw new Error(`chat.openai.com 登录页缺少跳转URL: ${JSON.stringify(payload)}`);
+            throw new Error(`chatgpt.com 登录页缺少跳转URL: ${JSON.stringify(payload)}`);
         }
 
         const authorizeResp = await this.fetch(payload.url, {
@@ -1010,37 +992,37 @@ export class OpenAIClient {
             redirect: "follow",
             headers: this.createBrowserHeaders({
                 "accept-encoding": "gzip, deflate, br",
-                referer: `${CHAT_OPENAI_BASE_URL}/`,
+                referer: `${CHATGPT_BASE_URL}/`,
                 "sec-fetch-dest": "document",
                 "sec-fetch-mode": "navigate",
                 "sec-fetch-site": "same-site",
             }),
         });
         if (!authorizeResp.ok) {
-            throw new Error(`打开 chat.openai.com authorize 页失败: ${authorizeResp.status}`);
+            throw new Error(`打开 chatgpt.com authorize 页失败: ${authorizeResp.status}`);
         }
     }
 
     private async fetchChatOpenAISession(email: string): Promise<Record<string, unknown>> {
-        const response = await this.fetch(`${CHAT_OPENAI_BASE_URL}/api/auth/session`, {
+        const response = await this.fetch(`${CHATGPT_BASE_URL}/api/auth/session`, {
             method: "GET",
             headers: this.createBrowserHeaders({
                 accept: "application/json",
                 "sec-fetch-dest": "empty",
                 "sec-fetch-mode": "cors",
                 "sec-fetch-site": "same-origin",
-                referer: `${CHAT_OPENAI_BASE_URL}/`,
+                referer: `${CHATGPT_BASE_URL}/`,
             }),
         });
         if (!response.ok) {
             throw new Error(
-                `获取 chat.openai.com session 失败: ${await this.formatErrorResponse(response)}`,
+                `获取 chatgpt.com session 失败: ${await this.formatErrorResponse(response)}`,
             );
         }
 
         const payload = (await response.json()) as unknown;
         if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-            throw new Error(`chat.openai.com session 返回格式异常: ${JSON.stringify(payload)}`);
+            throw new Error(`chatgpt.com session 返回格式异常: ${JSON.stringify(payload)}`);
         }
         
         const session = payload as Record<string, unknown>;
