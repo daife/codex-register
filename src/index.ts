@@ -39,6 +39,7 @@ async function runOnce(emailOverride?: string): Promise<void> {
     const manualOtp = hasFlag("--otp");
     const directSignupAuth = hasFlag("--sign");
     const saveAccessToken = hasFlag("--at");
+    const noCodex = hasFlag("--nocodex");
     const deviceProfile = generateRandomDeviceProfile();
     if (directSignupAuth) {
         const client = new OpenAIClient({
@@ -67,6 +68,11 @@ async function runOnce(emailOverride?: string): Promise<void> {
 
     const sessionFile = await registerClient.saveChatOpenAISessionSnapshot();
     console.log(`[chat_session_file] ${sessionFile}`);
+
+    if (noCodex) {
+        console.log(`[nocodex] 跳过 codex 授权流程`);
+        return;
+    }
 
     if (saveAccessToken) {
         const accessToken = await registerClient.getChatGPTAccessToken();
@@ -123,6 +129,7 @@ async function main() {
         if (emails.length === 0) {
             throw new Error("使用 --auth 时必须通过 --email 指定邮箱或邮箱列表文件");
         }
+        const noCodex = hasFlag("--nocodex");
         for (const email of emails) {
             console.log(`[登录授权] 目标邮箱: ${email}`);
             try {
@@ -134,11 +141,17 @@ async function main() {
                     manualMode: manualOtp,
                     smsBroker,
                 });
-                const result = await client.authLoginHTTP();
-                console.log(
-                    `[✅️授权成功] 邮箱：${client.email} 密码：${appConfig.defaultPassword} 授权文件：${result.authFile ?? ""}`,
-                );
-                // 授权模式下也保存登录态
+                
+                if (!noCodex) {
+                    const result = await client.authLoginHTTP();
+                    console.log(
+                        `[✅️授权成功] 邮箱：${client.email} 密码：${appConfig.defaultPassword} 授权文件：${result.authFile ?? ""}`,
+                    );
+                } else {
+                    console.log(`[nocodex] 跳过 codex 授权流程，仅获取 session`);
+                }
+
+                // 保存登录态
                 const sessionFile = await client.saveChatOpenAISessionSnapshot();
                 console.log(`[chat_session_file] ${sessionFile}`);
                 successCount++;

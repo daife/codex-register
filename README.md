@@ -109,6 +109,8 @@ npm run start -- [参数]
 - `--at`
     - 只注册 ChatGPT，不走 Codex OAuth 授权；注册成功后读取 ChatGPT `accessToken`
     - token 会保存到 `./auth/at/日期-邮箱.json`，文件名规则与 `./auth` 授权文件一致
+- `--nocodex`
+    - 跳过 Codex 授权流程（不生成 `.json` 的 Codex 凭证文件），仅执行到保存 Session 登录态文件为止。
 - `--st`
     - Sentinel 使用浏览器模式
 
@@ -126,13 +128,34 @@ npm run dev -- --n 1
 npm run dev -- --email your_mail@example.com
 ```
 
+#### 指定多个邮箱或邮箱列表文件
+
+支持逗号分隔或读取每行一个邮箱的文件：
+
+```bash
+# 逗号分隔
+npm run dev -- --email user1@example.com,user2@example.com --auth
+# 读取文件 (每行一个邮箱)
+npm run dev -- --email emails.txt --auth
+```
+
 #### 指定邮箱，只做登录授权
 
 ```bash
 npm run dev -- --email your_mail@example.com --auth
 ```
 
+#### 跳过 Codex 授权，仅保存 Session
+
+```bash
+# 注册模式
+npm run dev -- --nocodex
+# 批量登录模式
+npm run dev -- --email emails.txt --auth --nocodex
+```
+
 #### 指定邮箱，手动输入验证码
+
 
 ```bash
 npm run dev -- --email your_mail@example.com --otp
