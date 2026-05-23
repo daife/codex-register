@@ -1,3 +1,4 @@
+import {readFile} from "node:fs/promises";
 import {appConfig} from "./config.js";
 import {generateRandomDeviceProfile} from "./device-profile.js";
 import {OpenAIClient} from "./openai.js";
@@ -33,8 +34,8 @@ const smsBroker = appConfig.heroSMSApiKey ? createSMSBroker({
     country: appConfig.heroSMSCountry
 }) : undefined
 
-async function runOnce(): Promise<void> {
-    const email = readArgValue("--email").trim();
+async function runOnce(emailOverride?: string): Promise<void> {
+    const email = emailOverride || readArgValue("--email").trim();
     const manualOtp = hasFlag("--otp");
     const directSignupAuth = hasFlag("--sign");
     const saveAccessToken = hasFlag("--at");
@@ -89,43 +90,75 @@ async function runOnce(): Promise<void> {
     );
 }
 
+async function resolveEmails(input: string): Promise<string[]> {
+    if (!input) return [];
+    // 检查是否是文件路径 (简单判断：包含 . 或者 /)
+    if (input.includes(".") || input.includes("/") || input.includes("\\")) {
+        try {
+            const content = await readFile(input, "utf8");
+            return content.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        } catch (e) {
+            // 如果读取失败，当做普通字符串处理
+        }
+    }
+    // 逗号分隔
+    if (input.includes(",")) {
+        return input.split(",").map(s => s.trim()).filter(Boolean);
+    }
+    return [input];
+}
+
 async function main() {
     let round = 0;
     let successCount = 0;
     let failCount = 0;
-    const manualEmail = readArgValue("--email").trim();
+    const manualEmailInput = readArgValue("--email").trim();
     const authOnly = hasFlag("--auth");
     const manualOtp = hasFlag("--otp");
     const maxRounds = readNumberArg("--n");
 
+    const emails = await resolveEmails(manualEmailInput);
+
     if (authOnly) {
-        if (!manualEmail) {
-            throw new Error("使用 --auth 时必须同时指定 --email");
+        if (emails.length === 0) {
+            throw new Error("使用 --auth 时必须通过 --email 指定邮箱或邮箱列表文件");
         }
-        try {
-            const deviceProfile = generateRandomDeviceProfile();
-            const client = new OpenAIClient({
-                email: manualEmail,
-                password: appConfig.defaultPassword,
-                deviceProfile,
-                manualMode: manualOtp,
-                smsBroker,
-            });
-            const result = await client.authLoginHTTP();
-            console.log(
-                `[✅️授权成功] 邮箱：${client.email} 密码：${appConfig.defaultPassword} 授权文件：${result.authFile ?? ""}`,
-            );
-        } catch (error) {
-            console.error(`[❌️授权失败]`, error);
+        for (const email of emails) {
+            console.log(`[登录授权] 目标邮箱: ${email}`);
+            try {
+                const deviceProfile = generateRandomDeviceProfile();
+                const client = new OpenAIClient({
+                    email: email,
+                    password: appConfig.defaultPassword,
+                    deviceProfile,
+                    manualMode: manualOtp,
+                    smsBroker,
+                });
+                const result = await client.authLoginHTTP();
+                console.log(
+                    `[✅️授权成功] 邮箱：${client.email} 密码：${appConfig.defaultPassword} 授权文件：${result.authFile ?? ""}`,
+                );
+                // 授权模式下也保存登录态
+                const sessionFile = await client.saveChatOpenAISessionSnapshot();
+                console.log(`[chat_session_file] ${sessionFile}`);
+                successCount++;
+            } catch (error) {
+                failCount++;
+                console.error(`[❌️授权失败] ${email}`, error);
+            }
         }
         return;
     }
 
-    if (manualEmail) {
-        try {
-            await runOnce();
-        } catch (error) {
-            console.error(`[❌️授权失败]`, error);
+    if (emails.length > 0) {
+        for (const email of emails) {
+            try {
+                await runOnce(email);
+                successCount++;
+            } catch (error) {
+                failCount++;
+                console.error(`[❌️授权失败] ${email}`, error);
+            }
         }
         return;
     }
@@ -150,7 +183,7 @@ async function main() {
     }
 
     console.log(
-        `自动模式结束: 已执行=${round} 成功=${successCount} 失败=${failCount}`,
+        `程序执行结束: 总计=${successCount + failCount} 成功=${successCount} 失败=${failCount}`,
     );
 }
 
