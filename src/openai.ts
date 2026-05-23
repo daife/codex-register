@@ -251,7 +251,7 @@ export class OpenAIClient {
         console.log(`[${current}/${total}] ${message}`);
     }
 
-    async authLoginHTTP(): Promise<AuthLoginResult> {
+    async authLoginHTTP(options: { skipTokenExchange?: boolean } = {}): Promise<AuthLoginResult> {
         const totalSteps = 6;
         this.logProgress(1, totalSteps, "打开登录授权页");
         const oauthUrl = this.prepareManualLogin();
@@ -269,6 +269,9 @@ export class OpenAIClient {
         }
         if (oauthResp.url.startsWith(DEFAULT_REDIRECT_URI)) {
             const result = this.extractAuthResult(oauthResp.url);
+            if (options.skipTokenExchange) {
+                return result;
+            }
             const authRecord = await this.exchangeCodeForToken(result.code);
             const authPath = await this.saveAuthRecord(authRecord);
             result.authFile = authPath;
@@ -291,6 +294,9 @@ export class OpenAIClient {
             const continueURL = await this.selectWorkspace(oauthResp.url);
             this.logProgress(6, totalSteps, "交换授权并保存凭证");
             const result = await this.followOAuthRedirects(continueURL);
+            if (options.skipTokenExchange) {
+                return result;
+            }
             const authRecord = await this.exchangeCodeForToken(result.code);
             const authPath = await this.saveAuthRecord(authRecord);
             result.authFile = authPath;
@@ -336,6 +342,9 @@ export class OpenAIClient {
 
         this.logProgress(6, totalSteps, "交换授权并保存凭证");
         const result = await this.followOAuthRedirects(continueURL);
+        if (options.skipTokenExchange) {
+            return result;
+        }
         const authRecord = await this.exchangeCodeForToken(result.code);
         const authPath = await this.saveAuthRecord(authRecord);
         result.authFile = authPath;

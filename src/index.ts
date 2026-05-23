@@ -142,13 +142,14 @@ async function main() {
                     smsBroker,
                 });
                 
+                // 即使是 nocodex，也需要进行登录流程以获取 session cookies
+                const result = await client.authLoginHTTP({ skipTokenExchange: noCodex });
                 if (!noCodex) {
-                    const result = await client.authLoginHTTP();
                     console.log(
                         `[✅️授权成功] 邮箱：${client.email} 密码：${appConfig.defaultPassword} 授权文件：${result.authFile ?? ""}`,
                     );
                 } else {
-                    console.log(`[nocodex] 跳过 codex 授权流程，仅获取 session`);
+                    console.log(`[nocodex] 已完成登录流程，跳过 codex 授权`);
                 }
 
                 // 保存登录态
