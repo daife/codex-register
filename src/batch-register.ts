@@ -74,6 +74,9 @@ async function runForEmail(email: string): Promise<void> {
 
     await registerClient.authRegisterHTTP();
 
+    const sessionFile = await registerClient.saveChatOpenAISessionSnapshot();
+    console.log(`[chat_session_file] ${sessionFile}`);
+
     const loginClient = new OpenAIClient({
         email: registerClient.email,
         password: appConfig.defaultPassword,

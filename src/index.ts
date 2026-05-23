@@ -64,6 +64,9 @@ async function runOnce(): Promise<void> {
     });
     await registerClient.authRegisterHTTP();
 
+    const sessionFile = await registerClient.saveChatOpenAISessionSnapshot();
+    console.log(`[chat_session_file] ${sessionFile}`);
+
     if (saveAccessToken) {
         const accessToken = await registerClient.getChatGPTAccessToken();
         const accessTokenFile = await registerClient.saveChatGPTAccessToken(accessToken);

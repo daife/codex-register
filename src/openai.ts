@@ -920,6 +920,15 @@ export class OpenAIClient {
         return filePath;
     }
 
+    async saveChatOpenAISessionSnapshot(): Promise<string> {
+        if (!this.email) {
+            throw new Error("当前客户端缺少 email，无法保存 chat.openai.com session");
+        }
+        const fileName = this.buildAuthFileName(this.email);
+        const filePath = await this.saveChatOpenAISession(this.email, fileName);
+        return filePath;
+    }
+
     private async fetchChatOpenAISession(email: string): Promise<Record<string, unknown>> {
         const response = await this.fetch(`${CHAT_OPENAI_BASE_URL}/api/auth/session`, {
             method: "GET",
@@ -1106,8 +1115,6 @@ export class OpenAIClient {
         const authDir = path.resolve(process.cwd(), "auth");
         await mkdir(authDir, {recursive: true});
         const fileName = this.buildAuthFileName(record.email);
-        const sessionPath = await this.saveChatOpenAISession(record.email, fileName);
-        console.log(`chatSessionSaved: ${sessionPath}`);
         const filePath = path.join(authDir, fileName);
         await writeFile(filePath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
 
